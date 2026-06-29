@@ -31,6 +31,8 @@ interface CallBarProps {
   displayName: string;
   /** Left offset + width of the chat panel — passed from ChatView via a ref */
   chatRect: { left: number; width: number; top: number };
+  activeCallInRoom: { callType: CallType; roomId: string } | null;
+  onRejoin: () => void;
   onAccept: () => void;
   onReject: () => void;
   onEnd: () => void;
@@ -57,6 +59,8 @@ export function CallBar({
   screenVideoRef,
   displayName,
   chatRect,
+  activeCallInRoom,
+  onRejoin,
   onAccept,
   onReject,
   onEnd,
@@ -108,12 +112,14 @@ export function CallBar({
     [height],
   );
 
-  if (callStatus === "idle") return null;
+  if (callStatus === "idle" && !activeCallInRoom) return null;
 
   const isVideo = callType === "video";
   const isIncoming = callStatus === "incoming";
   const isCalling = callStatus === "calling";
   const isActive = callStatus === "active";
+  const isReconnecting = callStatus === "reconnecting";
+  const isRejoinable = callStatus === "idle" && !!activeCallInRoom;
   const displayH = collapsed ? COLLAPSED_H : height;
 
   return (
@@ -142,6 +148,9 @@ export function CallBar({
         .call-overlay { animation: slideDown 0.2s ease forwards; }
         .resize-strip:hover .resize-pill { background: rgba(255,255,255,0.35) !important; }
         .screen-confirm { animation: fadeIn 0.15s ease forwards; }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
       `}</style>
 
       <div
@@ -321,6 +330,112 @@ export function CallBar({
               </div>
             )}
 
+            {/* RECONNECTING — remote peer dropped, waiting for them */}
+            {isReconnecting && (
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 14,
+                  padding: 16,
+                }}
+              >
+                <div
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: "50%",
+                    border: "3px solid rgba(88,101,242,0.4)",
+                    borderTopColor: "#5865F2",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+                <div style={{ textAlign: "center" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "var(--dc-header-primary)",
+                    }}
+                  >
+                    {displayName} disconnected
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 12,
+                      color: "var(--dc-text-muted)",
+                    }}
+                  >
+                    Waiting for them to reconnect…
+                  </p>
+                </div>
+                <RoundBtn
+                  onClick={onEnd}
+                  color="#F23F43"
+                  icon={<PhoneOff size={18} />}
+                  label="End call"
+                />
+              </div>
+            )}
+
+            {/* REJOIN — this user reloaded while a call was active */}
+            {isRejoinable && (
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 14,
+                  padding: 16,
+                }}
+              >
+                <TalkingAvatar name={displayName} size={52} talking={false} />
+                <div style={{ textAlign: "center" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "var(--dc-header-primary)",
+                    }}
+                  >
+                    {displayName} is still in the call
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 12,
+                      color: "var(--dc-text-muted)",
+                    }}
+                  >
+                    You left a {activeCallInRoom?.callType} call
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <RoundBtn
+                    onClick={onEnd}
+                    color="#F23F43"
+                    icon={<PhoneOff size={18} />}
+                    label="Leave"
+                  />
+                  <RoundBtn
+                    onClick={onRejoin}
+                    color="#23A55A"
+                    icon={<Phone size={18} />}
+                    label="Rejoin"
+                    pulse
+                  />
+                </div>
+              </div>
+            )}
+
             {/* ACTIVE */}
             {isActive && (
               <>
@@ -329,7 +444,9 @@ export function CallBar({
                     so every <video> stays in the DOM at all times.
                     Visibility is controlled via CSS, not conditional rendering. */}
 
-                {/* Remote stream — shown normally, or hidden when local is sharing */}
+                {/* Remote stream — ALWAYS mounted and playing.
+                    Never use display:none — hidden elements don't play video.
+                    Use z-index + opacity to layer correctly. */}
                 <video
                   ref={remoteVideoRef}
                   autoPlay
@@ -339,14 +456,11 @@ export function CallBar({
                     inset: 0,
                     width: "100%",
                     height: "100%",
-                    objectFit:
-                      isVideo && !remoteScreenSharing ? "cover" : "contain",
+                    objectFit: remoteScreenSharing ? "contain" : "cover",
                     background: "#000",
-                    // Hide when: audio-only idle (show avatar), or local is screen sharing
-                    display:
-                      (!isVideo && !remoteScreenSharing) || isScreenSharing
-                        ? "none"
-                        : "block",
+                    // Hidden behind local screen share, but still playing
+                    zIndex: isScreenSharing ? 0 : 1,
+                    opacity: isScreenSharing ? 0 : 1,
                   }}
                 />
 
@@ -412,7 +526,7 @@ export function CallBar({
                   </div>
                 )}
 
-                {/* Audio-only avatar — shown when no screen share active */}
+                {/* Audio-only avatar — hidden whenever any screen share is active */}
                 {!isVideo && !isScreenSharing && !remoteScreenSharing && (
                   <div
                     style={{

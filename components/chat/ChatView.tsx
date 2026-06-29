@@ -33,6 +33,7 @@ export default function ChatView({
     callStatus,
     callType,
     incomingCall,
+    activeCallInRoom,
     isMuted,
     isCameraOff,
     isTalking,
@@ -46,6 +47,7 @@ export default function ChatView({
     acceptCall,
     rejectCall,
     endCall,
+    rejoinCall,
     toggleMute,
     toggleCamera,
     toggleScreenShare,
@@ -123,6 +125,8 @@ export default function ChatView({
         screenVideoRef={screenVideoRef}
         displayName={displayName}
         chatRect={chatRect}
+        activeCallInRoom={activeCallInRoom}
+        onRejoin={rejoinCall}
         onAccept={acceptCall}
         onReject={rejectCall}
         onEnd={endCall}
